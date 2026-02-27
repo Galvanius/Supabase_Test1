@@ -1,0 +1,12 @@
+-> COMMIT TO GIT AND PUSH
+vai sul path Workspace
+cd C:\LOGIX\supabase 
+git add .
+git commit -m <"Descrizione commit">
+git push -u origin main
+
+-> CONNETTI MCP AL SERVER SUPABASE
+Da Impostazioni premi il pulsante Connect
+
+su shell:
+supabase login
