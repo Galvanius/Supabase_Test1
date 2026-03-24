@@ -50,11 +50,25 @@ function fileSimilarity(a: FileInfo, b: FileInfo): number {
 
 serve(async (req) => {
   try {
+    const payload = req.headers.get("content-length") === "0"
+      ? {}
+      : await req.json();
     const {
       firstPrefix,
       secondPrefix,
       threshold = 0.7,
-    } = await req.json();
+    } = payload as {
+      firstPrefix?: string;
+      secondPrefix?: string;
+      threshold?: number;
+    };
+
+    if (!firstPrefix || !secondPrefix) {
+      return new Response(
+        "Richiesti firstPrefix e secondPrefix nel body JSON",
+        { status: 400 },
+      );
+    }
 
     const bucket = "Repository";
     const url = Deno.env.get("SUPABASE_URL");

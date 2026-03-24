@@ -4,12 +4,15 @@
 # Opzionale: impostare la variabile d'ambiente FUNCTION_URL oppure passare come primo argomento.
 
 param(
-    [string]$FunctionUrl = $env:CALCOLA_DUPLICATI_URL,    # fallback su variabile d'ambiente
-    [string]$ApiKey = $env:SUPABASE_SERVICE_ROLE_KEY       # opzionale: service role o anon key
+    [string]$FunctionUrl = $env:LEGGI_LIBRI_URL,            # fallback su variabile d'ambiente
+    [string]$ApiKey = $env:SUPABASE_SERVICE_ROLE_KEY,       # opzionale: service role o anon key
+    [string]$FirstPrefix = "FolderA",
+    [string]$SecondPrefix = "FolderB",
+    [double]$Threshold = 0.7
 )
 
 if (-not $FunctionUrl) {
-    Write-Error "Function URL non specificata. Imposta la variabile d'ambiente CALCOLA_DUPLICATI_URL o passa l'URL come primo argomento."
+    Write-Error "Function URL non specificata. Imposta la variabile d'ambiente LEGGI_LIBRI_URL o passa l'URL come primo argomento."
     exit 1
 }
 
@@ -26,8 +29,14 @@ if ($ApiKey) {
 try {
     Write-Host "Invocazione della funzione: $FunctionUrl" -ForegroundColor Cyan
 
-    # POST senza body (la funzione nel deploy non richiede payload)
-    $response = Invoke-RestMethod -Uri $FunctionUrl -Method Post -Headers $headers -ErrorAction Stop
+    # POST con body JSON richiesto dalla edge function
+    $body = @{
+        firstPrefix  = $FirstPrefix
+        secondPrefix = $SecondPrefix
+        threshold    = $Threshold
+    } | ConvertTo-Json
+
+    $response = Invoke-RestMethod -Uri $FunctionUrl -Method Post -Headers $headers -Body $body -ErrorAction Stop
 
     # Mostra il risultato in formato leggibile
     Write-Host "Risposta ricevuta:" -ForegroundColor Green
