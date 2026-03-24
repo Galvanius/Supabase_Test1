@@ -17,10 +17,11 @@ Deno.serve(async (req) => {
 
     // Use SQL RPC to get nextval from the sequence
     const sql = `SELECT nextval('public."SQ_DUPLICATI_PROGRESSIVO"') as value;`;
-    const res = await supabase.rpc('', { sql }).catch(() => null);
+    // supabase-js v2 returns { data, error } (not a Promise with .catch)
+    const { data: resData, error: resError } = await supabase.rpc('', { sql });
 
     // If RPC with raw SQL isn't available, use the Postgres REST endpoint
-    if (!res || res.error) {
+    if (resError) {
       const dbUrl = Deno.env.get('SUPABASE_DB_URL');
       if (!dbUrl) {
         return new Response(JSON.stringify({ error: 'Cannot run SQL: missing SUPABASE_DB_URL' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
@@ -43,7 +44,7 @@ Deno.serve(async (req) => {
       return new Response(body, { status: r.status, headers: { 'Content-Type': 'application/json' } });
     }
 
-    return new Response(JSON.stringify({ value: res }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ value: resData }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }

@@ -20,6 +20,11 @@ if (-not $ApiKey) {
     $ApiKey = $env:SUPABASE_ANON_KEY
 }
 
+if (-not $ApiKey) {
+    Write-Error "API key non specificata. Imposta SUPABASE_ANON_KEY o SUPABASE_SERVICE_ROLE_KEY."
+    exit 1
+}
+
 $headers = @{
     "Content-Type" = "application/json"
 }
