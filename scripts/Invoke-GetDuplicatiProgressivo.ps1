@@ -7,16 +7,16 @@
 
 param(
     [string]$FunctionUrl = $env:GET_DUPLICATI_URL,
-    [string]$ApiKey = $env:SUPABASE_SERVICE_ROLE_KEY
+    [string]$ApiKey = $env:SUPABASE_ANON_KEY
 )
 
 if (-not $FunctionUrl) {
-    Write-Error "Function URL non specificata. Imposta GET_DUPLICATI_URL o passa l'URL come primo argomento."
-    exit 1
+    # Default basato sul project-ref corrente (URL non è una secret)
+    $FunctionUrl = "https://ogkqcppxolscwzhkcqdr.supabase.co/functions/v1/GetDuplicatiProgressivo"
 }
 
 if (-not $ApiKey) {
-    $ApiKey = $env:SUPABASE_ANON_KEY
+    $ApiKey = $env:SUPABASE_SERVICE_ROLE_KEY
 }
 
 if (-not $ApiKey) {
