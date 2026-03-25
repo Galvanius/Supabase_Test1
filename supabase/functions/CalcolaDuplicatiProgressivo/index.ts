@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2.33.0";
+import postgres from "npm:postgres@3";
 
 // This Edge Function returns the next value from the SQ_DUPLICATI_PROGRESSIVO sequence.
 // Assumptions:
@@ -7,36 +7,25 @@ import { createClient } from "npm:@supabase/supabase-js@2.33.0";
 
 Deno.serve(async (req) => {
   try {
-    const url = Deno.env.get('SUPABASE_URL');
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!url || !serviceKey) {
-      return new Response(JSON.stringify({ error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    const supabase = createClient(url, serviceKey, { auth: { persistSession: false } });
-
-    // Call Postgres builtin nextval(sequence) via PostgREST RPC.
-    // Postgres function signature: nextval(regclass)
-    const { data: resData, error: resError } = await supabase.rpc(
-      "nextval",
-      { regclass: "public.\"SQ_DUPLICATI_PROGRESSIVO\"" } as any,
-    );
-
-    if (resError) {
-      console.error("nextval rpc error:", resError);
+    // Edge functions can connect to Postgres directly using SUPABASE_DB_URL.
+    const dbUrl = Deno.env.get("SUPABASE_DB_URL");
+    if (!dbUrl) {
       return new Response(
-        JSON.stringify({ error: resError.message ?? String(resError) }),
+        JSON.stringify({ error: "Missing SUPABASE_DB_URL" }),
         { status: 500, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    // PostgREST may return different shapes depending on function return type.
-    // We normalize to a single numeric/string value.
-    let value: unknown = resData as any;
-    if (Array.isArray(resData)) {
-      value = (resData[0] as any)?.value ?? resData[0];
-    } else if (resData && typeof resData === "object") {
-      value = (resData as any).value ?? resData;
+    const sql = postgres(dbUrl, { max: 1, idle_timeout: 5 });
+    const rows = await sql`select nextval('public."SQ_DUPLICATI_PROGRESSIVO"') as value;`;
+    const value = (rows as any)[0]?.value;
+    await sql.end();
+
+    if (value === undefined || value === null) {
+      return new Response(
+        JSON.stringify({ error: "Could not read sequence value" }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
     }
 
     return new Response(JSON.stringify({ value }), {
