@@ -25,6 +25,13 @@ if (-not $ApiKey) {
     exit 1
 }
 
+# Suggerimento: le Supabase keys JWT iniziano quasi sempre con "eyJ..."
+# Se passi un token sbagliato (es. "sbp_..."), la function risponde 401.
+if ($ApiKey -notmatch '^eyJ') {
+    Write-Error "API key non valida: atteso token JWT che inizia con 'eyJ'."
+    exit 1
+}
+
 $headers = @{
     "Content-Type" = "application/json"
 }
