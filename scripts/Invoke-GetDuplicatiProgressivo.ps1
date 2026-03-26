@@ -1,5 +1,5 @@
 # Invoke-GetDuplicatiProgressivo.ps1
-# Invoca la Edge Function "GetDuplicatiProgressivo" (lettura senza incremento).
+# Invoca la Edge Function "GetDuplicati" passando il progressivo.
 #
 # Richiede:
 # - $env:GET_DUPLICATI_URL (opzionale) oppure passare -FunctionUrl
@@ -7,12 +7,13 @@
 
 param(
     [string]$FunctionUrl = $env:GET_DUPLICATI_URL,
-    [string]$ApiKey = $env:SUPABASE_ANON_KEY
+    [string]$ApiKey = $env:SUPABASE_ANON_KEY,
+    [string]$Progressivo
 )
 
 if (-not $FunctionUrl) {
     # Default basato sul project-ref corrente (URL non è una secret)
-    $FunctionUrl = "https://ogkqcppxolscwzhkcqdr.supabase.co/functions/v1/GetDuplicatiProgressivo"
+    $FunctionUrl = "https://ogkqcppxolscwzhkcqdr.supabase.co/functions/v1/GetDuplicati"
 }
 
 if (-not $ApiKey) {
@@ -21,6 +22,11 @@ if (-not $ApiKey) {
 
 if (-not $ApiKey) {
     Write-Error "API key non specificata. Imposta SUPABASE_ANON_KEY o SUPABASE_SERVICE_ROLE_KEY."
+    exit 1
+}
+
+if (-not $Progressivo) {
+    Write-Error "Progressivo non specificato. Usa -Progressivo <valore>."
     exit 1
 }
 
@@ -37,8 +43,9 @@ $headers = @{
 }
 
 try {
-    Write-Host "Invocazione: $FunctionUrl" -ForegroundColor Cyan
-    $response = Invoke-RestMethod -Uri $FunctionUrl -Method Post -Headers $headers -Body '{}' -ErrorAction Stop
+    Write-Host "Invocazione: $FunctionUrl (progressivo=$Progressivo)" -ForegroundColor Cyan
+    $body = @{ progressivo = $Progressivo } | ConvertTo-Json
+    $response = Invoke-RestMethod -Uri $FunctionUrl -Method Post -Headers $headers -Body $body -ErrorAction Stop
     $response
 }
 catch {
