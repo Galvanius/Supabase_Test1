@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
       istanze = await sql`
         select *
         from public."GAL_Istanze"
-        where "ID" in ${sql(keyBList)}
+        where "id" in ${sql(keyBList)}
       ` as unknown as JsonObj[];
     }
 
@@ -70,14 +70,14 @@ Deno.serve(async (req) => {
     }
 
     const gruppi = istanze.map((padre) => {
-      const id = toKey(padre["ID"]);
+      const id = toKey(padre["id"]);
       return {
         padre,
         figli: duplicatiByKeyB.get(id) ?? [],
       };
     });
 
-    const padriIds = new Set(istanze.map((p) => toKey(p["ID"])));
+    const padriIds = new Set(istanze.map((p) => toKey(p["id"])));
     const orfani = (duplicati as JsonObj[]).filter((d) =>
       !padriIds.has(toKey(d["KeyB"]))
     );
