@@ -1,10 +1,11 @@
 import requests
 
+from modem_config import MODEM_IP
+
 # --- DATI DA INCOLLARE ---
 # Incolla qui l'intera stringa del Cookie che hai copiato dal browser
 COOKIE_STRINGA = "_TESTCOOKIESUPPORT=1; SID=492d04d3f706f53429b608b4d5f95711815cfe7ccfd7b1990f949955da3a9c4e"
-REFERER_URL = "http://192.168.1"
-MODEM_IP = "192.168.1.1"
+REFERER_URL = f"http://{'.'.join(MODEM_IP.split('.')[:3])}"
 
 headers = {
     "Cookie": COOKIE_STRINGA,

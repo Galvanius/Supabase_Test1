@@ -36,6 +36,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from modem_config import MODEM_IP, PASSWORD
+
 # Profilo GUI "INTERNET_ETH" (TIM Hub+ / ha_zteh388x): solitamente _InstID ~ _IGD.WD2.WCD1.WCPPP1_
 # (WAN Ethernet PPPoE). WD2 = porta ETH, WCPPP1 = canale PPP principale Internet.
 _INTERNET_ETH_ID_MARKERS = ("wd2", "wcd1", "wcppp1")
@@ -506,9 +508,9 @@ def cmd_login_only(client: TimHubH388XClient) -> int:
 
 def main() -> int:
     p = argparse.ArgumentParser(description="TIM Hub+ ZTE H388X - accesso HTTP (LAN)")
-    p.add_argument("--host", default=os.environ.get("TIM_HUB_HOST", "192.168.1.1"))
+    p.add_argument("--host", default=os.environ.get("TIM_HUB_HOST", MODEM_IP))
     p.add_argument("--user", default=os.environ.get("TIM_HUB_USER", "admin"))
-    p.add_argument("--password", default=os.environ.get("TIM_HUB_PASSWORD", ""))
+    p.add_argument("--password", default=os.environ.get("TIM_HUB_PASSWORD", PASSWORD))
     p.add_argument(
         "--password-from-env",
         metavar="VAR",

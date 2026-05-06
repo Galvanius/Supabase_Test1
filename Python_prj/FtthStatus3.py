@@ -1,10 +1,10 @@
 import requests
 
+from modem_config import MODEM_IP
+
 # --- INCOLLA QUI IL TUO COOKIE COMPLETO ---
 # Esempio: "_TESTCOOKIESUPPORT=1; SID=xxxxxxxx"
 MY_COOKIE = '_TESTCOOKIESUPPORT=1; SID=492d04d3f706f53429b608b4d5f95711815cfe7ccfd7b1990f949955da3a9c4e'
-
-MODEM_IP = "192.168.1.1"
 
 headers = {
     "Host": MODEM_IP,

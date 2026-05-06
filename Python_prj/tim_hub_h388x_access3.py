@@ -7,6 +7,8 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from modem_config import MODEM_IP, PASSWORD
+
 
 def _require_requests():
     try:
@@ -136,9 +138,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="TIM Hub+ ZTE H388X: estrae INTERNET_ETH e STATUS LED VoIP in JSON."
     )
-    parser.add_argument("--host", default=os.getenv("MODEM_HOST", "192.168.1.1"))
+    parser.add_argument("--host", default=os.getenv("MODEM_HOST", MODEM_IP))
     parser.add_argument("--username", default=os.getenv("MODEM_USERNAME", "admin"))
-    parser.add_argument("--password", default=os.getenv("MODEM_PASSWORD"))
+    parser.add_argument("--password", default=os.getenv("MODEM_PASSWORD", PASSWORD))
     parser.add_argument(
         "--output-file",
         default=os.getenv("OUTPUT_FILE", r"C:\LOGIX\Python_prj\tim_hub_h388x_access3_output.json"),

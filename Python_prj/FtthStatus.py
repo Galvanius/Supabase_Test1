@@ -1,10 +1,7 @@
 import requests
 import json
 
-# --- CONFIGURAZIONE ---
-MODEM_IP = "192.168.1.1"
-# Inserisci la password che usi per accedere alla web app del modem
-PASSWORD = "C5CsQG9@NN" 
+from modem_config import MODEM_IP, PASSWORD
 
 session = requests.Session()
 
