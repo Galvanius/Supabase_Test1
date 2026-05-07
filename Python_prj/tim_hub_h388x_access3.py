@@ -7,7 +7,11 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from modem_config import MODEM_IP, PASSWORD
+try:
+    from modem_config import MODEM_IP, PASSWORD
+except ModuleNotFoundError:
+    print("file configurazione mancante: modem_config.py", file=sys.stderr)
+    raise SystemExit(2) from None
 
 
 def _require_requests():
