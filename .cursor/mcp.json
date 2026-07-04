@@ -1,16 +1,15 @@
-{
+﻿{
   "mcpServers": {
     "supabase": {
-      "url": "https://mcp.supabase.com/mcp?project_ref=ogkqcppxolscwzhkcqdr",
-      "headers": {}
+      "type": "http",
+      "url": "http://127.0.0.1:54323/api/mcp"
     },
     "n8n-mcp": {
       "type": "http",
       "url": "http://localhost:5679/mcp-server/http",
       "headers": {
-        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwNGU4OWVkMS1lMjcwLTRmNzYtOTZhMi0yMmM5OGM5MGFkNzUiLCJpc3MiOiJuOG4iLCJhdWQiOiJtY3Atc2VydmVyLWFwaSIsImp0aSI6ImFiNGQ5YTNkLWUzNzUtNGRkZS04ZGE0LThjMTNmNGVlYjI4OCIsImlhdCI6MTc3NDUxNzA2OX0.kEZDw0VvcbRzMBoQxXiFKxoD7sQAXhYthXq3xaQcM4g"
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4OWE5ZDllNi0wYjgxLTQ1YzYtYWExZC0yYzY2ZmM1ZjQyOGEiLCJpc3MiOiJuOG4iLCJhdWQiOiJtY3Atc2VydmVyLWFwaSIsImp0aSI6Ijk5OTdiMmE5LTgxZGMtNGRkZS04OTJhLWVlMzI5ODUyMzI0MiIsImlhdCI6MTc4MzE4Mzg4Mn0.jq8-9sSwmVPPxBhCvHuF_-_34ryxAgGrEjcIfpmFFvU"
       }
     }
   }
 }
-

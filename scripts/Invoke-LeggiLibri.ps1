@@ -1,10 +1,6 @@
 # Invoke-LeggiLibri.ps1
-# Invoca la Edge Function "leggi_libri".
-#
-# Richiede:
-# - $env:LEGGI_LIBRI_URL (es. https://<project-ref>.supabase.co/functions/v1/leggi_libri)
-# - $env:SUPABASE_ANON_KEY (oppure $env:SUPABASE_SERVICE_ROLE_KEY)
-#
+# Invoca la Edge Function "leggi_libri" sul Supabase locale.
+# Per il cloud, imposta LEGGI_LIBRI_URL e SUPABASE_* prima di eseguire.
 
 param(
     [string]$FunctionUrl = $env:LEGGI_LIBRI_URL,
@@ -14,14 +10,12 @@ param(
     [double]$Threshold = 0.7
 )
 
-if (-not $FunctionUrl) {
-    Write-Error "Function URL non specificata. Imposta LEGGI_LIBRI_URL o passa l'URL come primo argomento."
-    exit 1
-}
+. "$PSScriptRoot\Set-LocalSupabase.ps1"
+$local = Get-LocalSupabaseDefaults
 
-if (-not $ApiKey) {
-    $ApiKey = $env:SUPABASE_ANON_KEY
-}
+if (-not $FunctionUrl) { $FunctionUrl = $local.LeggiLibri }
+if (-not $ApiKey) { $ApiKey = $env:SUPABASE_ANON_KEY }
+if (-not $ApiKey) { $ApiKey = $local.ServiceRoleKey }
 
 $headers = @{
     "Content-Type" = "application/json"
@@ -32,7 +26,7 @@ if ($ApiKey) {
 }
 
 try {
-    Write-Host "Invocazione: $FunctionUrl" -ForegroundColor Cyan
+    Write-Host "Invocazione (locale): $FunctionUrl" -ForegroundColor Cyan
 
     $body = @{
         firstPrefix  = $FirstPrefix
@@ -59,4 +53,3 @@ catch {
     }
     exit 2
 }
-

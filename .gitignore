@@ -1,6 +1,8 @@
 .tools/
 supabase/.temp/
 .temp/
+__pycache__/
+*.pyc
 
 # Credenziali modem (solo locale, non pubblicare su GitHub)
 Python_prj/modem_config.py
