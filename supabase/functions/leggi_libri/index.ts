@@ -56,7 +56,7 @@ serve(async (req) => {
       threshold = 0.7,
     } = await req.json();
 
-    const bucket = "Repository";
+    const bucket = "repository";
     const url = Deno.env.get("SUPABASE_URL");
     const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
       Deno.env.get("SUPABASE_ANON_KEY");

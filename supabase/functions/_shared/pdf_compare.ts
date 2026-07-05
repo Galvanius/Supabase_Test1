@@ -1,10 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getDocumentProxy } from "unpdf";
 
-export const BUCKET = "Repository";
+export const BUCKET = "repository";
 export const TEXT_PAGE_MIN_CHARS = 40;
 export const SCANNED_DOC_MAX_CHARS = 200;
-export const DEFAULT_MAX_SAMPLES = 48;
+export const DEFAULT_MAX_SAMPLES = 16;
 
 export type PageUnit = {
   pageIndex: number;
@@ -333,16 +333,37 @@ export async function compareTwoPdfs(
     downloadPdf(supabase, pathB),
   ]);
 
-  const [profileA, profileB] = await Promise.all([
-    buildPdfProfile(pathA, bytesA, maxSamples),
-    buildPdfProfile(pathB, bytesB, maxSamples),
+  const [hashA, hashB] = await Promise.all([
+    shaHex(bytesA, 0),
+    shaHex(bytesB, 0),
   ]);
 
   const nameScore = stringSimilarity(
     fileNameFromPath(pathA).toLowerCase(),
     fileNameFromPath(pathB).toLowerCase(),
   );
-  const sizeScore = sizeSimilarity(profileA.fileSize, profileB.fileSize);
+  const sizeScore = sizeSimilarity(bytesA.byteLength, bytesB.byteLength);
+
+  if (hashA === hashB) {
+    const score = 0.2 * (0.5 * nameScore + 0.5 * sizeScore) + 0.65 * 1 + 0.15 * 1;
+    if (score < threshold) return null;
+    return {
+      pathA,
+      pathB,
+      score,
+      nameScore,
+      sizeScore,
+      pageScore: 1,
+      contentScore: 1,
+      layout: "hash",
+    };
+  }
+
+  const [profileA, profileB] = await Promise.all([
+    buildPdfProfile(pathA, bytesA, maxSamples),
+    buildPdfProfile(pathB, bytesB, maxSamples),
+  ]);
+
   const basicScore = 0.5 * nameScore + 0.5 * sizeScore;
   const { contentScore, pageScore, layout } = compareProfiles(profileA, profileB);
   const score = basicScore * 0.2 + contentScore * 0.65 + pageScore * 0.15;
