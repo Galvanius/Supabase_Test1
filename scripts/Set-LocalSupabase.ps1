@@ -14,6 +14,7 @@ function Set-LocalSupabaseEnv {
     $env:CALCOLA_DUPLICATI_URL = "$script:LocalFunctionsBase/CalcolaDuplicatiProgressivo"
     $env:GET_DUPLICATI_URL = "$script:LocalFunctionsBase/GetDuplicati"
     $env:LEGGI_LIBRI_URL = "$script:LocalFunctionsBase/leggi_libri"
+    $env:LEGGI_LIBRI_COMPLETE_MANAGER_URL = "$script:LocalFunctionsBase/leggi_libri_complete_manager"
 }
 
 function Get-LocalSupabaseDefaults {
@@ -24,6 +25,7 @@ function Get-LocalSupabaseDefaults {
         ServiceRoleKey   = $script:LocalServiceRoleKey
         CalcolaDuplicati = "$script:LocalFunctionsBase/CalcolaDuplicatiProgressivo"
         GetDuplicati     = "$script:LocalFunctionsBase/GetDuplicati"
-        LeggiLibri       = "$script:LocalFunctionsBase/leggi_libri"
+        LeggiLibri                  = "$script:LocalFunctionsBase/leggi_libri"
+        LeggiLibriCompleteManager   = "$script:LocalFunctionsBase/leggi_libri_complete_manager"
     }
 }

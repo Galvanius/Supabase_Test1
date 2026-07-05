@@ -9,3 +9,15 @@ entrypoint = "./supabase/functions/leggi_libri/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/leggi_libri/*.html" ]
+
+[functions.leggi_libri_complete_manager]
+enabled = true
+verify_jwt = true
+import_map = "./supabase/functions/leggi_libri_complete_manager/deno.json"
+entrypoint = "./supabase/functions/leggi_libri_complete_manager/index.ts"
+
+[functions.leggi_libri_complete_worker]
+enabled = true
+verify_jwt = true
+import_map = "./supabase/functions/leggi_libri_complete_worker/deno.json"
+entrypoint = "./supabase/functions/leggi_libri_complete_worker/index.ts"
