@@ -6,6 +6,10 @@ import {
   DEFAULT_MAX_SAMPLES,
   listPdfsRecursive,
 } from "../_shared/pdf_compare.ts";
+import {
+  createLeggiLibriCompController,
+  setLeggiLibriCompFlag,
+} from "../_shared/run_control.ts";
 
 serve(async (req) => {
   let responseBody = "";
@@ -31,6 +35,9 @@ serve(async (req) => {
     }
 
     supabase = createClient(url, key);
+    await setLeggiLibriCompFlag(supabase, 1);
+    const runControl = createLeggiLibriCompController(supabase);
+
     const workerUrl = `${url}/functions/v1/leggi_libri_complete_worker`;
     const headers = {
       "Content-Type": "application/json",
@@ -46,9 +53,16 @@ serve(async (req) => {
     const aggregated: string[] = [];
     let comparisons = 0;
     let matches = 0;
+    let interrupted = false;
 
+    outer:
     for (const pathA of pdfsA) {
       for (const pathB of pdfsB) {
+        if (!(await runControl.shouldContinue())) {
+          interrupted = true;
+          break outer;
+        }
+
         comparisons++;
         const workerResponse = await fetch(workerUrl, {
           method: "POST",
@@ -74,6 +88,7 @@ serve(async (req) => {
     const header = [
       `Scansione ricorsiva: ${pdfsA.length} PDF in ${firstPrefix}, ${pdfsB.length} PDF in ${secondPrefix}.`,
       `Confronti eseguiti: ${comparisons}. Match sopra soglia: ${matches}.`,
+      ...(interrupted ? ["Interrotto dall'utente."] : []),
       "",
     ];
 

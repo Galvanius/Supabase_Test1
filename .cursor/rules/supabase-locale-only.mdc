@@ -1,0 +1,18 @@
+---
+description: Usa solo Supabase locale (Supabase_Test2), mai il remoto salvo richiesta esplicita
+alwaysApply: true
+---
+
+# Supabase: solo locale (default)
+
+- Non usare, deployare, migrare o configurare Supabase remoto/cloud, salvo richiesta esplicita dell'utente.
+- Stack di riferimento: Supabase locale in `C:\LOGIX\Cursor\Workspace\Supabase_Test2`
+  - API: http://127.0.0.1:54321
+  - Studio: http://127.0.0.1:54323
+- Codice, script e sorgente funzioni: `C:\LOGIX\Cursor\Workspace\Supabase_Test1`
+- Non proporre `supabase link`, push al remoto, deploy cloud o MCP sul progetto remoto, a meno che l'utente non lo chieda esplicitamente.
+- Migration, test e restart edge runtime vanno applicati solo al DB Docker locale.
+
+## Eccezione
+
+Se l'utente chiede esplicitamente di sincronizzare/deployare sul remoto (es. "sincronizza il remoto da locale", "deploy su Supabase cloud"), procedere solo per quella richiesta e tornare al default locale dopo.
