@@ -44,3 +44,12 @@ cd C:\LOGIX\Cursor\Workspace\Supabase_Test1\scripts
 .\Stop-LeggiLibriComplete.ps1
 -- oppure in SQL/Studio:
 -- UPDATE public."GAL_PARAMETER" SET valore_num = 0 WHERE nome = 'LEGGI_LIBRI_COMP';
+
+
+-> Esegui lettura
+cd C:\LOGIX\Cursor\Workspace\Supabase_Test1\scripts
+.\Invoke-LeggiLibri-complete-manager.ps1
+
+per bloccare:
+cd C:\LOGIX\Cursor\Workspace\Supabase_Test1\scripts
+.\Stop-LeggiLibriComplete.ps1
