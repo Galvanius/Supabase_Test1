@@ -285,6 +285,161 @@ function compareProfiles(profileA: PdfProfile, profileB: PdfProfile): {
   };
 }
 
+/** Oltre questa soglia si usa hash streaming + campioni a chunk (no unpdf). */
+const LARGE_PDF_BYTES = 20 * 1024 * 1024;
+const CHUNK_SAMPLE_BYTES = 256 * 1024;
+
+type StorageItem = {
+  name: string;
+  id?: string | null;
+  metadata?: { size?: number } | null;
+};
+
+async function getPdfFileSize(
+  supabase: SupabaseClient,
+  storagePath: string,
+): Promise<number> {
+  const lastSlash = storagePath.lastIndexOf("/");
+  const folder = lastSlash >= 0 ? storagePath.slice(0, lastSlash) : "";
+  const fileName = lastSlash >= 0 ? storagePath.slice(lastSlash + 1) : storagePath;
+
+  const { data, error } = await supabase.storage.from(BUCKET).list(folder, {
+    limit: 1000,
+    offset: 0,
+    sortBy: { column: "name", order: "asc" },
+  });
+
+  if (error) {
+    throw new Error(`Size lookup failed for ${storagePath}: ${error.message}`);
+  }
+
+  const item = ((data ?? []) as StorageItem[]).find((entry) => entry.name === fileName);
+  const size = item?.metadata?.size;
+  if (size == null || size <= 0) {
+    throw new Error(`Size not found for ${storagePath}`);
+  }
+
+  return size;
+}
+
+async function getSignedDownloadUrl(
+  supabase: SupabaseClient,
+  storagePath: string,
+): Promise<string> {
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(
+    storagePath,
+    3600,
+  );
+
+  if (error || !data?.signedUrl) {
+    throw new Error(
+      `Signed URL failed for ${storagePath}: ${error?.message ?? "no url"}`,
+    );
+  }
+
+  return data.signedUrl;
+}
+
+/** Hash SHA-256 in streaming (solo PDF piccoli). */
+async function streamSha256Hex(
+  url: string,
+): Promise<{ hash: string; size: number }> {
+  const { createHash } = await import("node:crypto");
+  const response = await fetch(url);
+  if (!response.ok || !response.body) {
+    throw new Error(`Stream download failed: ${response.status}`);
+  }
+
+  const hash = createHash("sha256");
+  let size = 0;
+  const reader = response.body.getReader();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    hash.update(value);
+    size += value.length;
+  }
+
+  return { hash: hash.digest("hex"), size };
+}
+
+async function quickFileFingerprint(
+  signedUrl: string,
+  fileSize: number,
+): Promise<string> {
+  if (fileSize <= 0) return "";
+
+  const sampleStarts = [
+    0,
+    Math.max(0, Math.floor(fileSize / 2) - Math.floor(CHUNK_SAMPLE_BYTES / 2)),
+    Math.max(0, fileSize - CHUNK_SAMPLE_BYTES),
+  ];
+
+  const chunkHashes: string[] = [];
+  for (const start of sampleStarts) {
+    const length = Math.max(1, Math.min(CHUNK_SAMPLE_BYTES, fileSize - start));
+    const chunk = await downloadByteRange(signedUrl, start, length);
+    chunkHashes.push(await shaHex(chunk, 32));
+  }
+
+  return shaHex(
+    new TextEncoder().encode(`${fileSize}|${chunkHashes.join("|")}`),
+    0,
+  );
+}
+
+async function downloadByteRange(
+  url: string,
+  start: number,
+  length: number,
+): Promise<Uint8Array> {
+  const end = start + length - 1;
+  const response = await fetch(url, {
+    headers: { Range: `bytes=${start}-${end}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Range download failed: ${response.status}`);
+  }
+
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+async function buildChunkProfile(
+  storagePath: string,
+  signedUrl: string,
+  fileSize: number,
+  fileHash: string,
+  maxSamples: number,
+): Promise<PdfProfile> {
+  const sampleCount = Math.min(maxSamples, Math.max(4, 12));
+  const pages: PageUnit[] = [];
+
+  for (let i = 0; i < sampleCount; i++) {
+    const start = Math.floor((fileSize * i) / sampleCount);
+    const length = Math.max(
+      1,
+      Math.min(CHUNK_SAMPLE_BYTES, fileSize - start),
+    );
+    const chunk = await downloadByteRange(signedUrl, start, length);
+    const fingerprint = await shaHex(chunk, 16);
+    pages.push({ pageIndex: i, text: "", fingerprint });
+  }
+
+  const estimatedPages = Math.max(1, Math.round(fileSize / 120_000));
+
+  return {
+    storagePath,
+    fileSize,
+    fileHash,
+    pageCount: estimatedPages,
+    pages,
+    totalTextLength: 0,
+    likelyScanned: true,
+  };
+}
+
 async function downloadPdf(
   supabase: SupabaseClient,
   path: string,
@@ -294,6 +449,37 @@ async function downloadPdf(
     throw new Error(`Download failed for ${path}: ${error?.message ?? "no data"}`);
   }
   return new Uint8Array(await data.arrayBuffer());
+}
+
+/** Scarica e analizza un PDF piccolo in memoria (unpdf). */
+async function loadPdfProfile(
+  supabase: SupabaseClient,
+  storagePath: string,
+  maxSamples: number,
+): Promise<PdfProfile> {
+  const bytes = await downloadPdf(supabase, storagePath);
+  return buildPdfProfile(storagePath, bytes, maxSamples);
+}
+
+async function resolvePdfProfile(
+  supabase: SupabaseClient,
+  storagePath: string,
+  maxSamples: number,
+  fileSize: number,
+  signedUrl: string,
+): Promise<PdfProfile> {
+  if (fileSize > LARGE_PDF_BYTES) {
+    const fileHash = await quickFileFingerprint(signedUrl, fileSize);
+    return buildChunkProfile(
+      storagePath,
+      signedUrl,
+      fileSize,
+      fileHash,
+      maxSamples,
+    );
+  }
+
+  return loadPdfProfile(supabase, storagePath, maxSamples);
 }
 
 export async function cleanupPostgres(supabase: SupabaseClient): Promise<void> {
@@ -328,23 +514,57 @@ export async function compareTwoPdfs(
   threshold: number,
   maxSamples: number,
 ): Promise<MatchDetail | null> {
-  const [bytesA, bytesB] = await Promise.all([
-    downloadPdf(supabase, pathA),
-    downloadPdf(supabase, pathB),
-  ]);
-
-  const [hashA, hashB] = await Promise.all([
-    shaHex(bytesA, 0),
-    shaHex(bytesB, 0),
-  ]);
-
   const nameScore = stringSimilarity(
     fileNameFromPath(pathA).toLowerCase(),
     fileNameFromPath(pathB).toLowerCase(),
   );
-  const sizeScore = sizeSimilarity(bytesA.byteLength, bytesB.byteLength);
 
-  if (hashA === hashB) {
+  const [sizeA, sizeB] = await Promise.all([
+    getPdfFileSize(supabase, pathA),
+    getPdfFileSize(supabase, pathB),
+  ]);
+  const sizeScore = sizeSimilarity(sizeA, sizeB);
+
+  const signedUrlA = await getSignedDownloadUrl(supabase, pathA);
+  const signedUrlB = await getSignedDownloadUrl(supabase, pathB);
+
+  const bothSmall = sizeA <= LARGE_PDF_BYTES && sizeB <= LARGE_PDF_BYTES;
+  if (bothSmall) {
+    const { hash: hashA } = await streamSha256Hex(signedUrlA);
+    const { hash: hashB } = await streamSha256Hex(signedUrlB);
+    if (hashA === hashB) {
+      const score = 0.2 * (0.5 * nameScore + 0.5 * sizeScore) + 0.65 * 1 +
+        0.15 * 1;
+      if (score < threshold) return null;
+      return {
+        pathA,
+        pathB,
+        score,
+        nameScore,
+        sizeScore,
+        pageScore: 1,
+        contentScore: 1,
+        layout: "hash",
+      };
+    }
+  }
+
+  const profileA = await resolvePdfProfile(
+    supabase,
+    pathA,
+    maxSamples,
+    sizeA,
+    signedUrlA,
+  );
+  const profileB = await resolvePdfProfile(
+    supabase,
+    pathB,
+    maxSamples,
+    sizeB,
+    signedUrlB,
+  );
+
+  if (profileA.fileHash === profileB.fileHash && bothSmall) {
     const score = 0.2 * (0.5 * nameScore + 0.5 * sizeScore) + 0.65 * 1 + 0.15 * 1;
     if (score < threshold) return null;
     return {
@@ -358,11 +578,6 @@ export async function compareTwoPdfs(
       layout: "hash",
     };
   }
-
-  const [profileA, profileB] = await Promise.all([
-    buildPdfProfile(pathA, bytesA, maxSamples),
-    buildPdfProfile(pathB, bytesB, maxSamples),
-  ]);
 
   const basicScore = 0.5 * nameScore + 0.5 * sizeScore;
   const { contentScore, pageScore, layout } = compareProfiles(profileA, profileB);
@@ -381,12 +596,6 @@ export async function compareTwoPdfs(
     layout,
   };
 }
-
-type StorageItem = {
-  name: string;
-  id?: string | null;
-  metadata?: { size?: number } | null;
-};
 
 export async function listPdfsRecursive(
   supabase: SupabaseClient,

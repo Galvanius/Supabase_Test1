@@ -48,7 +48,7 @@ serve(async (req) => {
 
     responseBody = match
       ? [
-        "Analizzati 2 PDF in memoria (nessun file salvato su disco).",
+        "Analizzati 2 PDF uno alla volta in memoria (nessun file salvato su disco).",
         "Pulizia completata: pdf_profiles svuotata, buffer memoria rilasciato.",
         "",
         formatMatch(match),

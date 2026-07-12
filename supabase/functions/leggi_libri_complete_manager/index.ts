@@ -51,6 +51,7 @@ serve(async (req) => {
     ]);
 
     const aggregated: string[] = [];
+    const errors: string[] = [];
     let comparisons = 0;
     let matches = 0;
     let interrupted = false;
@@ -72,9 +73,10 @@ serve(async (req) => {
 
         if (!workerResponse.ok) {
           const errText = await workerResponse.text();
-          throw new Error(
-            `Worker failed for ${pathA} vs ${pathB}: ${workerResponse.status} ${errText}`,
+          errors.push(
+            `Saltato ${pathA} vs ${pathB}: ${workerResponse.status} ${errText}`,
           );
+          continue;
         }
 
         const workerOutput = (await workerResponse.text()).trim();
@@ -88,8 +90,12 @@ serve(async (req) => {
     const header = [
       `Scansione ricorsiva: ${pdfsA.length} PDF in ${firstPrefix}, ${pdfsB.length} PDF in ${secondPrefix}.`,
       `Confronti eseguiti: ${comparisons}. Match sopra soglia: ${matches}.`,
+      ...(errors.length > 0
+        ? [`Confronti saltati per errore: ${errors.length}.`]
+        : []),
       ...(interrupted ? ["Interrotto dall'utente."] : []),
       "",
+      ...(errors.length > 0 ? [...errors, ""] : []),
     ];
 
     responseBody = [
