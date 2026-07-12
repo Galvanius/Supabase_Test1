@@ -5,6 +5,8 @@ export const BUCKET = "repository";
 export const TEXT_PAGE_MIN_CHARS = 40;
 export const SCANNED_DOC_MAX_CHARS = 200;
 export const DEFAULT_MAX_SAMPLES = 16;
+/** Salta coppie con rapporto dimensioni troppo diverso (es. 110 MB vs 11 MB). */
+export const MIN_SIZE_RATIO_PREFILTER = 0.45;
 
 export type PageUnit = {
   pageIndex: number;
@@ -287,7 +289,7 @@ function compareProfiles(profileA: PdfProfile, profileB: PdfProfile): {
 
 /** Oltre questa soglia si usa hash streaming + campioni a chunk (no unpdf). */
 const LARGE_PDF_BYTES = 20 * 1024 * 1024;
-const CHUNK_SAMPLE_BYTES = 256 * 1024;
+const CHUNK_SAMPLE_BYTES = 128 * 1024;
 
 type StorageItem = {
   name: string;
@@ -364,31 +366,6 @@ async function streamSha256Hex(
   return { hash: hash.digest("hex"), size };
 }
 
-async function quickFileFingerprint(
-  signedUrl: string,
-  fileSize: number,
-): Promise<string> {
-  if (fileSize <= 0) return "";
-
-  const sampleStarts = [
-    0,
-    Math.max(0, Math.floor(fileSize / 2) - Math.floor(CHUNK_SAMPLE_BYTES / 2)),
-    Math.max(0, fileSize - CHUNK_SAMPLE_BYTES),
-  ];
-
-  const chunkHashes: string[] = [];
-  for (const start of sampleStarts) {
-    const length = Math.max(1, Math.min(CHUNK_SAMPLE_BYTES, fileSize - start));
-    const chunk = await downloadByteRange(signedUrl, start, length);
-    chunkHashes.push(await shaHex(chunk, 32));
-  }
-
-  return shaHex(
-    new TextEncoder().encode(`${fileSize}|${chunkHashes.join("|")}`),
-    0,
-  );
-}
-
 async function downloadByteRange(
   url: string,
   start: number,
@@ -410,10 +387,9 @@ async function buildChunkProfile(
   storagePath: string,
   signedUrl: string,
   fileSize: number,
-  fileHash: string,
   maxSamples: number,
 ): Promise<PdfProfile> {
-  const sampleCount = Math.min(maxSamples, Math.max(4, 12));
+  const sampleCount = Math.min(maxSamples, Math.max(4, 6));
   const pages: PageUnit[] = [];
 
   for (let i = 0; i < sampleCount; i++) {
@@ -426,6 +402,14 @@ async function buildChunkProfile(
     const fingerprint = await shaHex(chunk, 16);
     pages.push({ pageIndex: i, text: "", fingerprint });
   }
+
+  const fingerprintSlice = pages.slice(0, Math.min(3, pages.length))
+    .map((page) => page.fingerprint)
+    .join("|");
+  const fileHash = await shaHex(
+    new TextEncoder().encode(`${fileSize}|${fingerprintSlice}`),
+    0,
+  );
 
   const estimatedPages = Math.max(1, Math.round(fileSize / 120_000));
 
@@ -469,12 +453,10 @@ async function resolvePdfProfile(
   signedUrl: string,
 ): Promise<PdfProfile> {
   if (fileSize > LARGE_PDF_BYTES) {
-    const fileHash = await quickFileFingerprint(signedUrl, fileSize);
     return buildChunkProfile(
       storagePath,
       signedUrl,
       fileSize,
-      fileHash,
       maxSamples,
     );
   }
@@ -507,76 +489,42 @@ function fileNameFromPath(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-export async function compareTwoPdfs(
-  supabase: SupabaseClient,
+function hashMatchDetail(
+  pathA: string,
+  pathB: string,
+  nameScore: number,
+  sizeScore: number,
+  threshold: number,
+): MatchDetail | null {
+  const score = 0.2 * (0.5 * nameScore + 0.5 * sizeScore) + 0.65 * 1 + 0.15 * 1;
+  if (score < threshold) return null;
+  return {
+    pathA,
+    pathB,
+    score,
+    nameScore,
+    sizeScore,
+    pageScore: 1,
+    contentScore: 1,
+    layout: "hash",
+  };
+}
+
+export function matchPdfProfiles(
+  profileA: PdfProfile,
+  profileB: PdfProfile,
   pathA: string,
   pathB: string,
   threshold: number,
-  maxSamples: number,
-): Promise<MatchDetail | null> {
+): MatchDetail | null {
   const nameScore = stringSimilarity(
     fileNameFromPath(pathA).toLowerCase(),
     fileNameFromPath(pathB).toLowerCase(),
   );
+  const sizeScore = sizeSimilarity(profileA.fileSize, profileB.fileSize);
 
-  const [sizeA, sizeB] = await Promise.all([
-    getPdfFileSize(supabase, pathA),
-    getPdfFileSize(supabase, pathB),
-  ]);
-  const sizeScore = sizeSimilarity(sizeA, sizeB);
-
-  const signedUrlA = await getSignedDownloadUrl(supabase, pathA);
-  const signedUrlB = await getSignedDownloadUrl(supabase, pathB);
-
-  const bothSmall = sizeA <= LARGE_PDF_BYTES && sizeB <= LARGE_PDF_BYTES;
-  if (bothSmall) {
-    const { hash: hashA } = await streamSha256Hex(signedUrlA);
-    const { hash: hashB } = await streamSha256Hex(signedUrlB);
-    if (hashA === hashB) {
-      const score = 0.2 * (0.5 * nameScore + 0.5 * sizeScore) + 0.65 * 1 +
-        0.15 * 1;
-      if (score < threshold) return null;
-      return {
-        pathA,
-        pathB,
-        score,
-        nameScore,
-        sizeScore,
-        pageScore: 1,
-        contentScore: 1,
-        layout: "hash",
-      };
-    }
-  }
-
-  const profileA = await resolvePdfProfile(
-    supabase,
-    pathA,
-    maxSamples,
-    sizeA,
-    signedUrlA,
-  );
-  const profileB = await resolvePdfProfile(
-    supabase,
-    pathB,
-    maxSamples,
-    sizeB,
-    signedUrlB,
-  );
-
-  if (profileA.fileHash === profileB.fileHash && bothSmall) {
-    const score = 0.2 * (0.5 * nameScore + 0.5 * sizeScore) + 0.65 * 1 + 0.15 * 1;
-    if (score < threshold) return null;
-    return {
-      pathA,
-      pathB,
-      score,
-      nameScore,
-      sizeScore,
-      pageScore: 1,
-      contentScore: 1,
-      layout: "hash",
-    };
+  if (profileA.fileHash === profileB.fileHash) {
+    return hashMatchDetail(pathA, pathB, nameScore, sizeScore, threshold);
   }
 
   const basicScore = 0.5 * nameScore + 0.5 * sizeScore;
@@ -597,11 +545,88 @@ export async function compareTwoPdfs(
   };
 }
 
-export async function listPdfsRecursive(
+export async function buildProfileForPath(
+  supabase: SupabaseClient,
+  storagePath: string,
+  fileSize: number,
+  maxSamples: number,
+): Promise<PdfProfile> {
+  const signedUrl = await getSignedDownloadUrl(supabase, storagePath);
+  return resolvePdfProfile(supabase, storagePath, maxSamples, fileSize, signedUrl);
+}
+
+export async function compareTwoPdfs(
+  supabase: SupabaseClient,
+  pathA: string,
+  pathB: string,
+  threshold: number,
+  maxSamples: number,
+  knownSizeA?: number,
+  knownSizeB?: number,
+): Promise<MatchDetail | null> {
+  const [sizeA, sizeB] = await Promise.all([
+    knownSizeA != null && knownSizeA > 0
+      ? Promise.resolve(knownSizeA)
+      : getPdfFileSize(supabase, pathA),
+    knownSizeB != null && knownSizeB > 0
+      ? Promise.resolve(knownSizeB)
+      : getPdfFileSize(supabase, pathB),
+  ]);
+
+  if (sizeSimilarity(sizeA, sizeB) < MIN_SIZE_RATIO_PREFILTER) {
+    return null;
+  }
+
+  const signedUrlA = await getSignedDownloadUrl(supabase, pathA);
+  const signedUrlB = await getSignedDownloadUrl(supabase, pathB);
+
+  const bothSmall = sizeA <= LARGE_PDF_BYTES && sizeB <= LARGE_PDF_BYTES;
+  if (bothSmall) {
+    const { hash: hashA } = await streamSha256Hex(signedUrlA);
+    const { hash: hashB } = await streamSha256Hex(signedUrlB);
+    if (hashA === hashB) {
+      const nameScore = stringSimilarity(
+        fileNameFromPath(pathA).toLowerCase(),
+        fileNameFromPath(pathB).toLowerCase(),
+      );
+      return hashMatchDetail(
+        pathA,
+        pathB,
+        nameScore,
+        sizeSimilarity(sizeA, sizeB),
+        threshold,
+      );
+    }
+  }
+
+  const profileA = await resolvePdfProfile(
+    supabase,
+    pathA,
+    maxSamples,
+    sizeA,
+    signedUrlA,
+  );
+  const profileB = await resolvePdfProfile(
+    supabase,
+    pathB,
+    maxSamples,
+    sizeB,
+    signedUrlB,
+  );
+
+  return matchPdfProfiles(profileA, profileB, pathA, pathB, threshold);
+}
+
+export type PdfInventoryItem = {
+  path: string;
+  size: number;
+};
+
+async function listPdfItemsRecursive(
   supabase: SupabaseClient,
   prefix: string,
-): Promise<string[]> {
-  const results: string[] = [];
+): Promise<PdfInventoryItem[]> {
+  const results: PdfInventoryItem[] = [];
   const normalizedPrefix = prefix.replace(/\/+$/, "");
   const { data, error } = await supabase.storage.from(BUCKET).list(normalizedPrefix, {
     limit: 1000,
@@ -620,14 +645,30 @@ export async function listPdfsRecursive(
 
     const isFolder = item.id == null && item.metadata == null;
     if (isFolder) {
-      results.push(...await listPdfsRecursive(supabase, itemPath));
+      results.push(...await listPdfItemsRecursive(supabase, itemPath));
       continue;
     }
 
     if (item.name.toLowerCase().endsWith(".pdf")) {
-      results.push(itemPath);
+      const size = item.metadata?.size ?? 0;
+      results.push({ path: itemPath, size });
     }
   }
 
-  return results.sort();
+  return results.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+export async function listPdfsWithSize(
+  supabase: SupabaseClient,
+  prefix: string,
+): Promise<PdfInventoryItem[]> {
+  return listPdfItemsRecursive(supabase, prefix);
+}
+
+export async function listPdfsRecursive(
+  supabase: SupabaseClient,
+  prefix: string,
+): Promise<string[]> {
+  const items = await listPdfItemsRecursive(supabase, prefix);
+  return items.map((item) => item.path);
 }

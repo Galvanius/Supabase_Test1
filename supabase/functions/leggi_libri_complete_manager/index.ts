@@ -4,12 +4,18 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   cleanupPostgres,
   DEFAULT_MAX_SAMPLES,
-  listPdfsRecursive,
+  listPdfsWithSize,
+  MIN_SIZE_RATIO_PREFILTER,
 } from "../_shared/pdf_compare.ts";
 import {
   createLeggiLibriCompController,
   setLeggiLibriCompFlag,
 } from "../_shared/run_control.ts";
+
+function sizeSimilarity(sizeA: number, sizeB: number): number {
+  if (sizeA === 0 || sizeB === 0) return 0;
+  return Math.min(sizeA, sizeB) / Math.max(sizeA, sizeB);
+}
 
 serve(async (req) => {
   let responseBody = "";
@@ -45,36 +51,50 @@ serve(async (req) => {
       Authorization: `Bearer ${key}`,
     };
 
-    const [pdfsA, pdfsB] = await Promise.all([
-      listPdfsRecursive(supabase, firstPrefix),
-      listPdfsRecursive(supabase, secondPrefix),
+    const [inventoryA, inventoryB] = await Promise.all([
+      listPdfsWithSize(supabase, firstPrefix),
+      listPdfsWithSize(supabase, secondPrefix),
     ]);
 
     const aggregated: string[] = [];
     const errors: string[] = [];
     let comparisons = 0;
     let matches = 0;
+    let skippedBySize = 0;
     let interrupted = false;
 
     outer:
-    for (const pathA of pdfsA) {
-      for (const pathB of pdfsB) {
+    for (const itemA of inventoryA) {
+      for (const itemB of inventoryB) {
         if (!(await runControl.shouldContinue())) {
           interrupted = true;
           break outer;
         }
 
         comparisons++;
+
+        if (sizeSimilarity(itemA.size, itemB.size) < MIN_SIZE_RATIO_PREFILTER) {
+          skippedBySize++;
+          continue;
+        }
+
         const workerResponse = await fetch(workerUrl, {
           method: "POST",
           headers,
-          body: JSON.stringify({ pathA, pathB, threshold, maxSamples }),
+          body: JSON.stringify({
+            pathA: itemA.path,
+            pathB: itemB.path,
+            sizeA: itemA.size,
+            sizeB: itemB.size,
+            threshold,
+            maxSamples,
+          }),
         });
 
         if (!workerResponse.ok) {
           const errText = await workerResponse.text();
           errors.push(
-            `Saltato ${pathA} vs ${pathB}: ${workerResponse.status} ${errText}`,
+            `Saltato ${itemA.path} vs ${itemB.path}: ${workerResponse.status} ${errText}`,
           );
           continue;
         }
@@ -88,8 +108,11 @@ serve(async (req) => {
     }
 
     const header = [
-      `Scansione ricorsiva: ${pdfsA.length} PDF in ${firstPrefix}, ${pdfsB.length} PDF in ${secondPrefix}.`,
+      `Scansione ricorsiva: ${inventoryA.length} PDF in ${firstPrefix}, ${inventoryB.length} PDF in ${secondPrefix}.`,
       `Confronti eseguiti: ${comparisons}. Match sopra soglia: ${matches}.`,
+      ...(skippedBySize > 0
+        ? [`Saltati per dimensioni troppo diverse: ${skippedBySize}.`]
+        : []),
       ...(errors.length > 0
         ? [`Confronti saltati per errore: ${errors.length}.`]
         : []),

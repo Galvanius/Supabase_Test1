@@ -17,6 +17,8 @@ serve(async (req) => {
     const {
       pathA,
       pathB,
+      sizeA,
+      sizeB,
       threshold = 0.7,
       maxSamples = DEFAULT_MAX_SAMPLES,
     } = await req.json();
@@ -44,6 +46,8 @@ serve(async (req) => {
       pathB,
       threshold,
       maxSamples,
+      typeof sizeA === "number" ? sizeA : undefined,
+      typeof sizeB === "number" ? sizeB : undefined,
     );
 
     responseBody = match

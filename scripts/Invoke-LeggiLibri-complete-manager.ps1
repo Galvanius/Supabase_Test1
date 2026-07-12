@@ -8,7 +8,7 @@ param(
     [string]$FirstPrefix = "FolderA",
     [string]$SecondPrefix = "FolderB",
     [double]$Threshold = 0.7,
-    [int]$MaxSamples = 48
+    [int]$MaxSamples = 16
 )
 
 . "$PSScriptRoot\Set-LocalSupabase.ps1"
