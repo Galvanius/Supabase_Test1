@@ -2,7 +2,6 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  cleanupPostgres,
   compareTwoPdfs,
   DEFAULT_MAX_SAMPLES,
   formatMatch,
@@ -52,8 +51,7 @@ serve(async (req) => {
 
     responseBody = match
       ? [
-        "Analizzati 2 PDF uno alla volta in memoria (nessun file salvato su disco).",
-        "Pulizia completata: pdf_profiles svuotata, buffer memoria rilasciato.",
+        "Confronto eseguito (profilo da cache DB se già presente).",
         "",
         formatMatch(match),
       ].join("\n")
@@ -62,10 +60,6 @@ serve(async (req) => {
     console.error("leggi_libri_complete_worker error:", error);
     responseStatus = 500;
     responseBody = `Errore in leggi_libri_complete_worker: ${error instanceof Error ? error.message : String(error)}`;
-  } finally {
-    if (supabase) {
-      await cleanupPostgres(supabase);
-    }
   }
 
   return new Response(responseBody, {

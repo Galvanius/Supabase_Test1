@@ -464,6 +464,114 @@ async function resolvePdfProfile(
   return loadPdfProfile(supabase, storagePath, maxSamples);
 }
 
+function effectiveSampleCount(maxSamples: number, fileSize: number): number {
+  if (fileSize > LARGE_PDF_BYTES) {
+    return Math.min(maxSamples, Math.max(4, 6));
+  }
+  return maxSamples;
+}
+
+type PdfProfileRow = {
+  storage_path: string;
+  file_size: number;
+  file_hash: string;
+  page_count: number;
+  likely_scanned: boolean;
+  total_text_length: number;
+  sample_count: number;
+  samples: PageUnit[];
+};
+
+function profileFromRow(row: PdfProfileRow): PdfProfile {
+  return {
+    storagePath: row.storage_path,
+    fileSize: Number(row.file_size),
+    fileHash: row.file_hash,
+    pageCount: row.page_count,
+    pages: row.samples ?? [],
+    totalTextLength: row.total_text_length,
+    likelyScanned: row.likely_scanned,
+  };
+}
+
+async function loadCachedProfile(
+  supabase: SupabaseClient,
+  storagePath: string,
+  maxSamples: number,
+  fileSize: number,
+): Promise<PdfProfile | null> {
+  const expectedSamples = effectiveSampleCount(maxSamples, fileSize);
+  const { data, error } = await supabase
+    .from("pdf_profiles")
+    .select(
+      "storage_path, file_size, file_hash, page_count, likely_scanned, total_text_length, sample_count, samples",
+    )
+    .eq("storage_path", storagePath)
+    .maybeSingle();
+
+  if (error) {
+    console.error("pdf_profiles read error:", error);
+    return null;
+  }
+
+  if (!data || data.sample_count !== expectedSamples) {
+    return null;
+  }
+
+  return profileFromRow(data as PdfProfileRow);
+}
+
+async function saveCachedProfile(
+  supabase: SupabaseClient,
+  profile: PdfProfile,
+  maxSamples: number,
+): Promise<void> {
+  const { error } = await supabase.from("pdf_profiles").upsert(
+    {
+      storage_path: profile.storagePath,
+      file_size: profile.fileSize,
+      file_hash: profile.fileHash,
+      page_count: profile.pageCount,
+      likely_scanned: profile.likelyScanned,
+      total_text_length: profile.totalTextLength,
+      sample_count: effectiveSampleCount(maxSamples, profile.fileSize),
+      samples: profile.pages,
+    },
+    { onConflict: "storage_path" },
+  );
+
+  if (error) {
+    console.error("pdf_profiles write error:", error);
+  }
+}
+
+/** Cache pigra: riusa profilo da DB se presente, altrimenti costruisce e salva. */
+export async function getOrBuildProfile(
+  supabase: SupabaseClient,
+  storagePath: string,
+  fileSize: number,
+  maxSamples: number,
+): Promise<PdfProfile> {
+  const cached = await loadCachedProfile(
+    supabase,
+    storagePath,
+    maxSamples,
+    fileSize,
+  );
+  if (cached) return cached;
+
+  const signedUrl = await getSignedDownloadUrl(supabase, storagePath);
+  const profile = await resolvePdfProfile(
+    supabase,
+    storagePath,
+    maxSamples,
+    fileSize,
+    signedUrl,
+  );
+  await saveCachedProfile(supabase, profile, maxSamples);
+  return profile;
+}
+
 export async function cleanupPostgres(supabase: SupabaseClient): Promise<void> {
   const { error } = await supabase
     .from("pdf_profiles")
@@ -551,8 +659,7 @@ export async function buildProfileForPath(
   fileSize: number,
   maxSamples: number,
 ): Promise<PdfProfile> {
-  const signedUrl = await getSignedDownloadUrl(supabase, storagePath);
-  return resolvePdfProfile(supabase, storagePath, maxSamples, fileSize, signedUrl);
+  return getOrBuildProfile(supabase, storagePath, fileSize, maxSamples);
 }
 
 export async function compareTwoPdfs(
@@ -577,13 +684,23 @@ export async function compareTwoPdfs(
     return null;
   }
 
-  const signedUrlA = await getSignedDownloadUrl(supabase, pathA);
-  const signedUrlB = await getSignedDownloadUrl(supabase, pathB);
-
   const bothSmall = sizeA <= LARGE_PDF_BYTES && sizeB <= LARGE_PDF_BYTES;
   if (bothSmall) {
-    const { hash: hashA } = await streamSha256Hex(signedUrlA);
-    const { hash: hashB } = await streamSha256Hex(signedUrlB);
+    const [cachedA, cachedB] = await Promise.all([
+      loadCachedProfile(supabase, pathA, maxSamples, sizeA),
+      loadCachedProfile(supabase, pathB, maxSamples, sizeB),
+    ]);
+
+    let hashA = cachedA?.fileHash;
+    let hashB = cachedB?.fileHash;
+
+    if (!hashA || !hashB) {
+      const signedUrlA = await getSignedDownloadUrl(supabase, pathA);
+      const signedUrlB = await getSignedDownloadUrl(supabase, pathB);
+      if (!hashA) hashA = (await streamSha256Hex(signedUrlA)).hash;
+      if (!hashB) hashB = (await streamSha256Hex(signedUrlB)).hash;
+    }
+
     if (hashA === hashB) {
       const nameScore = stringSimilarity(
         fileNameFromPath(pathA).toLowerCase(),
@@ -599,20 +716,8 @@ export async function compareTwoPdfs(
     }
   }
 
-  const profileA = await resolvePdfProfile(
-    supabase,
-    pathA,
-    maxSamples,
-    sizeA,
-    signedUrlA,
-  );
-  const profileB = await resolvePdfProfile(
-    supabase,
-    pathB,
-    maxSamples,
-    sizeB,
-    signedUrlB,
-  );
+  const profileA = await getOrBuildProfile(supabase, pathA, sizeA, maxSamples);
+  const profileB = await getOrBuildProfile(supabase, pathB, sizeB, maxSamples);
 
   return matchPdfProfiles(profileA, profileB, pathA, pathB, threshold);
 }

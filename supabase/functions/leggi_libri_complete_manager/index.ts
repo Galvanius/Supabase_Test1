@@ -41,6 +41,7 @@ serve(async (req) => {
     }
 
     supabase = createClient(url, key);
+    await cleanupPostgres(supabase);
     await setLeggiLibriCompFlag(supabase, 1);
     const runControl = createLeggiLibriCompController(supabase);
 
